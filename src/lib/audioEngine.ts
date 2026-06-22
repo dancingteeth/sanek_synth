@@ -92,7 +92,7 @@ export class AudioEngine {
         osc.frequency.value = (params.frequency as number) || 440;
         osc.detune.value = (params.detune as number) || 0;
         gain = ctx.createGain();
-        gain.gain.value = 0; // Silent until triggered
+        gain.gain.value = (params.gain as number) || 0.5;
         osc.connect(gain);
         osc.start();
         node = osc;

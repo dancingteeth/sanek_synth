@@ -167,8 +167,12 @@ export const usePatchStore = create<PatchStore>()(
         set({ modules: [], connections: [], selectedModuleId: null });
       },
 
-      initPatch: () => {
+      initPatch: async () => {
         const { addModule, addConnection } = get();
+        
+        try {
+          await audioEngine.init();
+        } catch {}
         
         const oscId = addModule('oscillator', 100, 100);
         const filterId = addModule('filter', 400, 100);
