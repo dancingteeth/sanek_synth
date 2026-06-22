@@ -59,6 +59,24 @@ export class AudioEngine {
     }
   }
 
+  private triggeredGates = new Set<string>();
+
+  triggerGate(moduleId: string) {
+    const gain = this.moduleGains.get(moduleId);
+    if (gain && !this.triggeredGates.has(moduleId)) {
+      gain.gain.setValueAtTime(1, this.ctx!.currentTime);
+      this.triggeredGates.add(moduleId);
+    }
+  }
+
+  releaseGate(moduleId: string) {
+    const gain = this.moduleGains.get(moduleId);
+    if (gain) {
+      gain.gain.setValueAtTime(0, this.ctx!.currentTime);
+      this.triggeredGates.delete(moduleId);
+    }
+  }
+
   createModuleNode(moduleId: string, type: string, params: Record<string, number | boolean | string>) {
     const ctx = this.getContext();
     let node: AudioNode;
@@ -74,7 +92,7 @@ export class AudioEngine {
         osc.frequency.value = (params.frequency as number) || 440;
         osc.detune.value = (params.detune as number) || 0;
         gain = ctx.createGain();
-        gain.gain.value = (params.gain as number) || 0.5;
+        gain.gain.value = 0; // Silent until triggered
         osc.connect(gain);
         osc.start();
         node = osc;

@@ -223,6 +223,7 @@ export const MODULE_DEFINITIONS: Record<ModuleType, ModuleDefinition> = {
     inputs: [
       { id: 'in', type: 'audio', name: 'In', direction: 'input' },
       { id: 'cv', type: 'cv', name: 'CV', direction: 'input' },
+      { id: 'gate', type: 'gate', name: 'Gate', direction: 'input' },
     ],
     outputs: [],
     defaults: {
