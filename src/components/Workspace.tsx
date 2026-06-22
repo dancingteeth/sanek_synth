@@ -1,11 +1,8 @@
-import { useCallback } from 'react';
+import { useCallback, useMemo } from 'react';
 import ReactFlow, {
   MiniMap,
   Controls,
   Background,
-  useNodesState,
-  useEdgesState,
-  addEdge,
   Node,
   Edge,
   Connection,
@@ -13,34 +10,37 @@ import ReactFlow, {
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 import { usePatchStore } from '@/stores/patchStore';
-import { ModuleNode } from './ModuleNode';
+import ModuleNode from './ModuleNode';
+import { MODULE_DEFINITIONS } from '@/lib/moduleDefinitions';
+import type { ModuleType } from '@/types';
 
 const nodeTypes = {
   module: ModuleNode,
 };
 
 export function Workspace() {
-  const { modules, connections, addModule, addConnection, selectModule, selectedModuleId } = usePatchStore();
-  
-  const [nodes, setNodes, onNodesChange] = useNodesState([]);
-  const [edges, setEdges, onEdgesChange] = useEdgesState([]);
+  const modules = usePatchStore((s) => s.modules);
+  const connections = usePatchStore((s) => s.connections);
+  const addModule = usePatchStore((s) => s.addModule);
+  const addConnection = usePatchStore((s) => s.addConnection);
+  const selectModule = usePatchStore((s) => s.selectModule);
+  const selectedModuleId = usePatchStore((s) => s.selectedModuleId);
 
-  // Sync store modules to React Flow nodes
-  const syncNodes = useCallback(() => {
-    const flowNodes: Node[] = modules.map(m => ({
+  const nodes: Node[] = useMemo(() => 
+    modules.map(m => ({
       id: m.id,
       type: 'module',
-      position: { x: m.x, y: m.y },
+      position: m.position,
       data: { 
         module: m,
         isSelected: selectedModuleId === m.id,
       },
-    }));
-    setNodes(flowNodes);
-  }, [modules, selectedModuleId, setNodes]);
+    })),
+    [modules, selectedModuleId]
+  );
 
-  const syncEdges = useCallback(() => {
-    const flowEdges: Edge[] = connections.map(c => ({
+  const edges: Edge[] = useMemo(() => 
+    connections.map(c => ({
       id: c.id,
       source: c.sourceModuleId,
       target: c.targetModuleId,
@@ -48,24 +48,35 @@ export function Workspace() {
       targetHandle: c.targetPortId,
       animated: true,
       style: { stroke: '#7c3aed', strokeWidth: 2 },
-    }));
-    setEdges(flowEdges);
-  }, [connections, setEdges]);
+    })),
+    [connections]
+  );
 
-  // Sync when store changes
-  if (nodes.length !== modules.length || edges.length !== connections.length) {
-    syncNodes();
-    syncEdges();
-  }
+  const onNodesChange = useCallback((changes: any) => {
+    for (const change of changes) {
+      if (change.type === 'position' && change.position) {
+        usePatchStore.getState().updateModule(change.id, {
+          position: { x: change.position.x, y: change.position.y },
+        });
+      }
+    }
+  }, []);
+
+  const onEdgesChange = useCallback((changes: any) => {
+    for (const change of changes) {
+      if (change.type === 'remove') {
+        usePatchStore.getState().removeConnection(change.id);
+      }
+    }
+  }, []);
 
   const onConnect = useCallback(
     (params: Connection) => {
       if (params.source && params.target) {
         addConnection(params.source, params.sourceHandle || '', params.target, params.targetHandle || '');
       }
-      setEdges((eds) => addEdge({ ...params, animated: true, style: { stroke: '#7c3aed', strokeWidth: 2 } }, eds));
     },
-    [addConnection, setEdges]
+    [addConnection]
   );
 
   const onNodeClick = useCallback(
@@ -90,13 +101,14 @@ export function Workspace() {
       
       const type = event.dataTransfer.getData('application/reactflow');
       if (!type) return;
+      if (!(type in MODULE_DEFINITIONS)) return;
 
       const position = {
         x: event.clientX - 200,
         y: event.clientY - 50,
       };
 
-      addModule(type, position.x, position.y);
+      addModule(type as ModuleType, position.x, position.y);
     },
     [addModule]
   );
@@ -125,22 +137,17 @@ export function Workspace() {
         <Controls />
         <MiniMap 
           nodeColor={(node) => {
-            const data = node.data as { module?: { type: string } };
-            switch (data.module?.type) {
-              case 'oscillator':
-              case 'wavetable':
-              case 'noise':
-              case 'sample':
+            const data = node.data as { module?: { type: ModuleType } };
+            const def = data.module ? MODULE_DEFINITIONS[data.module.type] : undefined;
+            switch (def?.category) {
+              case 'source':
                 return '#10b981';
-              case 'filter':
-              case 'reverb':
-              case 'delay':
-              case 'distortion':
+              case 'effect':
                 return '#3b82f6';
-              case 'lfo':
-              case 'adsr':
-              case 'random':
+              case 'modulation':
                 return '#a855f7';
+              case 'utility':
+                return '#f59e0b';
               default:
                 return '#64748b';
             }

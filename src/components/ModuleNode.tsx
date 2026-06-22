@@ -1,7 +1,38 @@
 import { memo } from 'react';
 import { Handle, Position, NodeProps } from 'reactflow';
 import { usePatchStore } from '@/stores/patchStore';
+import { MODULE_DEFINITIONS } from '@/lib/moduleDefinitions';
 import type { Module } from '@/types';
+
+function getStringOptions(paramKey: string, moduleType: string): { value: string; label: string }[] | undefined {
+  switch (paramKey) {
+    case 'waveform':
+      return [
+        { value: 'sine', label: 'Sine' },
+        { value: 'triangle', label: 'Triangle' },
+        { value: 'sawtooth', label: 'Sawtooth' },
+        { value: 'square', label: 'Square' },
+      ];
+    case 'type':
+      if (moduleType === 'filter') {
+        return [
+          { value: 'lowpass', label: 'Lowpass' },
+          { value: 'highpass', label: 'Highpass' },
+          { value: 'bandpass', label: 'Bandpass' },
+          { value: 'notch', label: 'Notch' },
+        ];
+      }
+      return undefined;
+    case 'mode':
+      return [
+        { value: 'unipolar', label: 'Unipolar' },
+        { value: 'bipolar', label: 'Bipolar' },
+        { value: 'triggered', label: 'Triggered' },
+      ];
+    default:
+      return undefined;
+  }
+}
 
 interface ModuleNodeData {
   module: Module;
@@ -16,6 +47,7 @@ function ModuleNode({ data, id }: NodeProps<ModuleNodeData>) {
     updateModuleParam(id, param, value);
   };
 
+  const def = MODULE_DEFINITIONS[module.type];
   const categoryColors: Record<string, string> = {
     source: 'border-emerald-500/50 bg-emerald-500/10',
     effect: 'border-blue-500/50 bg-blue-500/10',
@@ -26,7 +58,7 @@ function ModuleNode({ data, id }: NodeProps<ModuleNodeData>) {
   return (
     <div
       className={`min-w-[180px] rounded-lg border-2 bg-synth-panel shadow-lg ${
-        data.isSelected ? 'border-synth-accent' : categoryColors[module.type] || 'border-synth-border'
+        data.isSelected ? 'border-synth-accent' : categoryColors[def.category] || 'border-synth-border'
       }`}
       onClick={() => selectModule(id)}
     >
@@ -61,22 +93,30 @@ function ModuleNode({ data, id }: NodeProps<ModuleNodeData>) {
           }
           
           if (typeof value === 'number') {
-            const isInteger = Number.isInteger(value);
+            const range = def.paramRanges?.[key];
+            const min = range?.min ?? 0;
+            const max = range?.max ?? 100;
+            const step = range?.step ?? (Number.isInteger(value) ? 1 : 0.01);
+            const displayValue = Number.isInteger(value) ? value : parseFloat(value.toFixed(2));
+            
             return (
               <div key={key} className="space-y-1">
                 <div className="flex justify-between text-xs">
                   <span className="text-synth-muted capitalize">{key}</span>
                   <span className="text-synth-text font-mono">
-                    {isInteger ? value : value.toFixed(2)}
+                    {displayValue}
                   </span>
                 </div>
                 <input
                   type="range"
-                  min="0"
-                  max={value * 3 || 100}
-                  step={isInteger ? 1 : 0.01}
+                  min={min}
+                  max={max}
+                  step={step}
                   value={value}
-                  onChange={(e) => handleParamChange(key, isInteger ? parseInt(e.target.value) : parseFloat(e.target.value))}
+                  onChange={(e) => {
+                    const newValue = step < 1 ? parseFloat(e.target.value) : parseInt(e.target.value);
+                    handleParamChange(key, newValue);
+                  }}
                   className="w-full h-1 accent-synth-accent"
                   onClick={(e) => e.stopPropagation()}
                 />
@@ -84,12 +124,37 @@ function ModuleNode({ data, id }: NodeProps<ModuleNodeData>) {
             );
           }
           
-          return (
-            <div key={key} className="text-xs">
-              <span className="text-synth-muted capitalize">{key}: </span>
-              <span className="text-synth-text font-mono">{value}</span>
-            </div>
-          );
+          if (typeof value === 'string') {
+            const options = getStringOptions(key, module.type);
+            if (options) {
+              return (
+                <div key={key} className="space-y-1">
+                  <div className="flex justify-between text-xs">
+                    <span className="text-synth-muted capitalize">{key}</span>
+                  </div>
+                  <select
+                    value={value}
+                    onChange={(e) => handleParamChange(key, e.target.value)}
+                    className="w-full bg-synth-bg border border-synth-border rounded px-2 py-1 text-xs text-synth-text focus:border-synth-accent focus:outline-none"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    {options.map((opt) => (
+                      <option key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              );
+            }
+            
+            return (
+              <div key={key} className="text-xs">
+                <span className="text-synth-muted capitalize">{key}: </span>
+                <span className="text-synth-text font-mono">{value}</span>
+              </div>
+            );
+          }
         })}
       </div>
 

@@ -1,7 +1,8 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { Module, Connection, ProjectSettings, SanekProject } from '@/types';
+import type { Module, Connection, ProjectSettings, SanekProject, ModuleType } from '@/types';
 import { MODULE_DEFINITIONS } from '@/lib/moduleDefinitions';
+import { audioEngine } from '@/lib/audioEngine';
 
 interface PatchStore {
   modules: Module[];
@@ -9,7 +10,7 @@ interface PatchStore {
   selectedModuleId: string | null;
   settings: ProjectSettings;
   
-  addModule: (type: string, x: number, y: number) => string;
+  addModule: (type: ModuleType, x: number, y: number) => string;
   removeModule: (id: string) => void;
   updateModule: (id: string, updates: Partial<Module>) => void;
   updateModuleParam: (id: string, param: string, value: number | boolean | string) => void;
@@ -19,7 +20,6 @@ interface PatchStore {
   removeConnection: (id: string) => void;
   
   randomizeSelected: () => void;
-  randomizeCategory: (category: string) => void;
   
   clearPatch: () => void;
   initPatch: () => void;
@@ -30,6 +30,7 @@ interface PatchStore {
 }
 
 let moduleCounter = 0;
+let connectionCounter = 0;
 
 export const usePatchStore = create<PatchStore>()(
   persist(
@@ -52,16 +53,25 @@ export const usePatchStore = create<PatchStore>()(
 
         const module: Module = {
           id,
-          type: type as Module['type'],
+          type,
           name: `${def.name} ${get().modules.filter(m => m.type === type).length + 1}`,
-          x,
-          y,
+          position: { x, y },
           params: { ...def.defaults },
           inputs: def.inputs.map(p => ({ ...p, id: `${id}_${p.id}` })),
           outputs: def.outputs.map(p => ({ ...p, id: `${id}_${p.id}` })),
         };
 
         set((state) => ({ modules: [...state.modules, module] }));
+        
+        // Wire audio engine
+        try {
+          if (audioEngine.getContext()) {
+            audioEngine.createModuleNode(id, type, module.params);
+          }
+        } catch {
+          // AudioEngine not initialized (e.g., in tests)
+        }
+        
         return id;
       },
 
@@ -89,12 +99,19 @@ export const usePatchStore = create<PatchStore>()(
             m.id === id ? { ...m, params: { ...m.params, [param]: value } } : m
           ),
         }));
+        
+        // Sync to audio engine
+        try {
+          audioEngine.setParam(id, param, value);
+        } catch {
+          // AudioEngine not initialized
+        }
       },
 
       selectModule: (id) => set({ selectedModuleId: id }),
 
       addConnection: (sourceModuleId, sourcePortId, targetModuleId, targetPortId) => {
-        const id = `conn_${Date.now()}`;
+        const id = `conn_${Date.now()}_${connectionCounter++}`;
         set((state) => ({
           connections: [...state.connections, {
             id,
@@ -104,9 +121,24 @@ export const usePatchStore = create<PatchStore>()(
             targetPortId,
           }],
         }));
+        
+        // Wire audio engine
+        try {
+          audioEngine.connect(sourceModuleId, sourcePortId, targetModuleId, targetPortId);
+        } catch {
+          // AudioEngine not initialized
+        }
       },
 
       removeConnection: (id) => {
+        const conn = get().connections.find(c => c.id === id);
+        if (conn) {
+          try {
+            audioEngine.disconnect(conn.sourceModuleId, conn.sourcePortId, conn.targetModuleId, conn.targetPortId);
+          } catch {
+            // AudioEngine not initialized
+          }
+        }
         set((state) => ({
           connections: state.connections.filter(c => c.id !== id),
         }));
@@ -119,21 +151,16 @@ export const usePatchStore = create<PatchStore>()(
         const module = modules.find(m => m.id === selectedModuleId);
         if (!module) return;
 
-        Object.keys(module.params).forEach(param => {
-          const def = MODULE_DEFINITIONS[module.type];
-          const defaultValue = def?.defaults[param];
-          if (typeof defaultValue === 'number') {
-            const range = Math.abs(defaultValue) * 2 || 1;
-            const value = defaultValue + (Math.random() - 0.5) * range;
-            updateModuleParam(module.id, param, Math.max(0, value));
+        const def = MODULE_DEFINITIONS[module.type];
+        Object.entries(module.params).forEach(([param, value]) => {
+          if (typeof value === 'number') {
+            const range = def.paramRanges?.[param];
+            const min = range?.min ?? Math.min(value * 0.5, 0);
+            const max = range?.max ?? Math.max(value * 1.5, 1);
+            const newValue = min + Math.random() * (max - min);
+            updateModuleParam(module.id, param, Math.max(min, Math.min(max, newValue)));
           }
         });
-      },
-
-      randomizeCategory: (category) => {
-        // Placeholder for categorized random patch generation
-        const { modules, addModule, updateModuleParam } = get();
-        // Implementation will be in Phase 2
       },
 
       clearPatch: () => {
@@ -141,24 +168,20 @@ export const usePatchStore = create<PatchStore>()(
       },
 
       initPatch: () => {
-        const { addModule, addConnection, clearPatch } = get();
-        clearPatch();
+        const { addModule, addConnection } = get();
         
         const oscId = addModule('oscillator', 100, 100);
         const filterId = addModule('filter', 400, 100);
         const outputId = addModule('output', 700, 100);
         
-        // Simple init connections: osc -> filter -> output
-        setTimeout(() => {
-          const osc = get().modules.find(m => m.id === oscId);
-          const filter = get().modules.find(m => m.id === filterId);
-          const output = get().modules.find(m => m.id === outputId);
-          
-          if (osc && filter && output) {
-            addConnection(oscId, osc.outputs[0]?.id || '', filterId, filter.inputs[0]?.id || '');
-            addConnection(filterId, filter.outputs[0]?.id || '', outputId, output.inputs[0]?.id || '');
-          }
-        }, 0);
+        const osc = get().modules.find(m => m.id === oscId);
+        const filter = get().modules.find(m => m.id === filterId);
+        const output = get().modules.find(m => m.id === outputId);
+        
+        if (osc && filter && output) {
+          addConnection(oscId, osc.outputs[0]?.id || '', filterId, filter.inputs[0]?.id || '');
+          addConnection(filterId, filter.outputs[0]?.id || '', outputId, output.inputs[0]?.id || '');
+        }
       },
 
       updateSettings: (updates) => {

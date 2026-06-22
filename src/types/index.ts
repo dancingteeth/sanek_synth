@@ -8,12 +8,11 @@ export type ModuleType =
   | 'adsr'
   | 'random'
   | 'mixer'
+  | 'vca'
   | 'output'
   | 'reverb'
   | 'delay'
   | 'distortion'
-  | 'compressor'
-  | 'eq'
   | 'noise'
   | 'sample';
 
@@ -23,7 +22,7 @@ export interface Port {
   id: string;
   type: PortType;
   name: string;
-  direction?: 'input' | 'output';
+  direction: 'input' | 'output';
 }
 
 export interface ModuleParams {
@@ -34,8 +33,7 @@ export interface Module {
   id: string;
   type: ModuleType;
   name: string;
-  x: number;
-  y: number;
+  position: { x: number; y: number };
   params: ModuleParams;
   inputs: Port[];
   outputs: Port[];
@@ -75,4 +73,14 @@ export interface SanekProject {
   connections: Connection[];
   settings: ProjectSettings;
   samples: SampleReference[];
+}
+
+export interface ModuleDefinition {
+  type: ModuleType;
+  name: string;
+  category: 'source' | 'effect' | 'modulation' | 'utility';
+  inputs: (Omit<Port, 'id'> & { id?: string })[];
+  outputs: (Omit<Port, 'id'> & { id?: string })[];
+  defaults: ModuleParams;
+  paramRanges?: Record<string, { min: number; max: number; step?: number }>;
 }

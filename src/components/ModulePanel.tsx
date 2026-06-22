@@ -1,15 +1,21 @@
 import { usePatchStore } from '@/stores/patchStore';
 import { MODULE_DEFINITIONS } from '@/lib/moduleDefinitions';
+import type { ModuleType } from '@/types';
 
 const MODULE_CATEGORIES = [
-  { id: 'source', name: 'Sources', color: 'bg-emerald-500/20 border-emerald-500/50' },
-  { id: 'effect', name: 'Effects', color: 'bg-blue-500/20 border-blue-500/50' },
-  { id: 'modulation', name: 'Modulation', color: 'bg-purple-500/20 border-purple-500/50' },
-  { id: 'utility', name: 'Utility', color: 'bg-amber-500/20 border-amber-500/50' },
+  { id: 'source', name: 'Sources', color: 'border-emerald-500/50 bg-emerald-500/10' },
+  { id: 'effect', name: 'Effects', color: 'border-blue-500/50 bg-blue-500/10' },
+  { id: 'modulation', name: 'Modulation', color: 'border-purple-500/50 bg-purple-500/10' },
+  { id: 'utility', name: 'Utility', color: 'border-amber-500/50 bg-amber-500/10' },
 ];
 
 export function ModulePanel() {
-  const { addModule } = usePatchStore();
+  const addModule = usePatchStore((s) => s.addModule);
+
+  const handleDragStart = (e: React.DragEvent, type: ModuleType) => {
+    e.dataTransfer.setData('application/reactflow', type);
+    e.dataTransfer.effectAllowed = 'move';
+  };
 
   return (
     <div className="w-64 bg-synth-panel border-r border-synth-border flex flex-col">
@@ -27,7 +33,9 @@ export function ModulePanel() {
                 .map(([type, def]) => (
                   <button
                     key={type}
-                    onClick={() => addModule(type, 100 + Math.random() * 200, 100 + Math.random() * 200)}
+                    draggable
+                    onDragStart={(e) => handleDragStart(e, type as ModuleType)}
+                    onClick={() => addModule(type as ModuleType, 100 + Math.random() * 200, 100 + Math.random() * 200)}
                     className={`w-full text-left px-3 py-2 rounded border text-sm hover:bg-synth-border/50 transition-colors ${category.color}`}
                   >
                     {def.name}
