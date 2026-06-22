@@ -36,3 +36,7 @@ coverage
 .cache
 temp
 .tmp
+
+# Environment
+.env
+.env.*
